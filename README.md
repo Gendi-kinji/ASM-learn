@@ -24,3 +24,21 @@ The registers ecx and edx are used to store the data and the data length respect
 The program aims to read the value of a sensor and perform an action based on what the sensor interprets. It can be found in the Sense.exe file and the Sense.asm assembly file.
 The program first gets input and converts it to an integer. It is then compared to two numbers: 30 and 70. If the number is less than 30, the motor is activated. If the number is less than 70, the alarm is activated. If the number is moderately between 30 and 70, the motor is set to stop. The motor status is then compared against 1. If the status is equal to 1, the motor_on_msg is displayed. If not, the motor_off_msg is displayed. 
 The alarm status is also compared against 1. If it is equal, the alarm_on_msg is displayed on the console and if it is not equal, the alarm_off_msg is displayed on the console. It uses the ecx register to display the messages while placing the eax and ebx register values as 4 and 1 respectively.
+
+****Compiling and running the programs****
+
+When compiling the files, you can use nasm as a compiler.
+```
+nasm -f elf64 -o filename.o -g - for 64 bit systems
+nasm -f elf32 -o filename.o -g - for 32 bit systems
+```
+When creating the executable files for the program, you can use the ld which acts as a linker
+```
+ld filename.o -o filename - for 64 bit systems
+ld -m elf_i386 filename.o -o filename - for 32 bit systems
+```
+****Challenges encountered****
+
+The major challenges that were faced when performing these tasks were segmentation faults. This is mainly because of the use of 32-bit registers in 64-bit systems hence it wasn't easy to compile the assembly code. This also happened because of the use of 32-bit instructions that were run in 64-bit systems, bringing about errors of instructions not used in 64-bit systems.
+
+
