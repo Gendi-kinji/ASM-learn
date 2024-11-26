@@ -1,66 +1,79 @@
 section .data
     prompt db "Enter a number: ", 0
-    positive_msg db "POSITIVE", 10, 0
-    negative_msg db "NEGATIVE", 10, 0
-    zero_msg db "ZERO", 10, 0
+    positive_msg db "POSITIVE", 0
+    negative_msg db "NEGATIVE", 0
+    zero_msg db "ZERO", 0
 
 section .bss
-    number resd 1               ; Reserve space for 1 integer
+    user_input resb 4 ; Reserve space for user input
 
 section .text
-global _start
+    global _start
 
 _start:
-    ; Step 1: Prompt the user for input
-    mov rax, 1                   ; syscall: write
-    mov rdi, 1                   ; file descriptor: stdout
-    mov rsi, prompt              ; address of the prompt string
-    mov rdx, 16                  ; length of the prompt string
-    syscall
+    ; Print the prompt
+    mov eax, 4             ; syscall: write
+    mov ebx, 1             ; file descriptor: stdout
+    mov ecx, prompt        ; pointer to message
+    mov edx, 15            ; message length
+    int 0x80               ; call kernel
 
-    ; Read user input (number)
-    mov rax, 0                   ; syscall: read
-    mov rdi, 0                   ; file descriptor: stdin
-    lea rsi, [number]            ; address of the number variable
-    mov rdx, 4                   ; read 4 bytes (size of an integer)
-    syscall
+    ; Read input
+    mov eax, 3             ; syscall: read
+    mov ebx, 0             ; file descriptor: stdin
+    mov ecx, user_input    ; buffer to store input
+    mov edx, 4             ; buffer length
+    int 0x80               ; call kernel
 
-    ; Step 2: Classify the number
-    mov eax, [number]            ; Load the user input into eax
+    ; Convert input to integer
+    mov esi, user_input    ; pointer to input
+    xor eax, eax           ; clear eax
+    xor ecx, ecx           ; clear ecx
+parse_input:
+    movzx ecx, byte [esi]  ; load byte
+    cmp ecx, 0xA           ; check for newline
+    je classify_number
+    sub ecx, '0'           ; convert ASCII to integer
+    imul eax, eax, 10      ; shift left by 10 (decimal)
+    add eax, ecx           ; add digit
+    inc esi                ; move to next character
+    jmp parse_input
 
-    cmp eax, 0                   ; Compare the number with 0
-    je zero_case                 ; If the number is 0, jump to zero_case
+classify_number:
+    ; Check if number is zero
+    cmp eax, 0
+    je print_zero
 
-    jg positive_case             ; If the number is greater than 0, jump to positive_case
+    ; Check if number is positive
+    jl print_negative
 
-negative_case:
-    ; Handle negative case
-    mov rax, 1                   ; syscall: write
-    mov rdi, 1                   ; file descriptor: stdout
-    mov rsi, negative_msg        ; message to print
-    mov rdx, 8                   ; length of the message ("NEGATIVE")
-    syscall
-    jmp done                     ; Unconditional jump to the end
+    ; If not negative, it’s positive
+    jmp print_positive
 
-positive_case:
-    ; Handle positive case
-    mov rax, 1                   ; syscall: write
-    mov rdi, 1                   ; file descriptor: stdout
-    mov rsi, positive_msg        ; message to print
-    mov rdx, 8                   ; length of the message ("POSITIVE")
-    syscall
-    jmp done                     ; Unconditional jump to the end
+print_zero:
+    mov eax, 4             ; syscall: write
+    mov ebx, 1             ; file descriptor: stdout
+    mov ecx, zero_msg      ; pointer to message
+    mov edx, 4             ; message length
+    int 0x80               ; call kernel
+    jmp exit_program       ; avoid fall-through
 
-zero_case:
-    ; Handle zero case
-    mov rax, 1                   ; syscall: write
-    mov rdi, 1                   ; file descriptor: stdout
-    mov rsi, zero_msg            ; message to print
-    mov rdx, 4                   ; length of the message ("ZERO")
-    syscall
+print_negative:
+    mov eax, 4             ; syscall: write
+    mov ebx, 1             ; file descriptor: stdout
+    mov ecx, negative_msg  ; pointer to message
+    mov edx, 8             ; message length
+    int 0x80
+    jmp exit_program
 
-done:
-    ; Exit the program
-    mov rax, 60                  ; syscall: exit
-    xor rdi, rdi                 ; exit code 0
-    syscall
+print_positive:
+    mov eax, 4             ; syscall: write
+    mov ebx, 1             ; file descriptor: stdout
+    mov ecx, positive_msg  ; pointer to message
+    mov edx, 8             ; message length
+    int 0x80
+
+exit_program:
+    mov eax, 1             ; syscall: exit
+    xor ebx, ebx           ; return code 0
+    int 0x80

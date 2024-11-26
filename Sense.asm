@@ -1,83 +1,119 @@
 section .data
-    threshold db 50              ; Threshold for water level (e.g., 50)
-    motor_control db 0           ; Motor control bit (0 = off, 1 = on)
-    alarm_control db 0           ; Alarm control bit (0 = off, 1 = triggered)
-    sensor_value db 60           ; Simulated sensor value (e.g., 60)
+    sensor_value dw 0        ; Simulated sensor value
+    motor_status db 0        ; Motor status: 0 = OFF, 1 = ON
+    alarm_status db 0        ; Alarm status: 0 = OFF, 1 = ON
+    prompt_sensor db "Enter sensor value (0-100):", 0
+    motor_on_msg db "Motor ON", 0
+    motor_off_msg db "Motor OFF", 0
+    alarm_on_msg db "Alarm ON", 0
+    alarm_off_msg db "Alarm OFF", 0
+
+section .bss
+    input_buffer resb 4      ; Buffer for user input
 
 section .text
-global _start
+    global _start
 
 _start:
-    ; Step 1: Read the sensor value
-    mov al, [sensor_value]      ; Load the sensor value into AL register for comparison
+    ; Print sensor input prompt
+    mov eax, 4               ; syscall: write
+    mov ebx, 1               ; file descriptor: stdout
+    mov ecx, prompt_sensor   ; pointer to message
+    mov edx, 30              ; message length
+    int 0x80
 
-    ; Step 2: Compare sensor value with threshold
-    movzx bl, byte [threshold]  ; Load the threshold value into BL (zero-extend)
-    cmp al, bl                  ; Compare the sensor value (AL) with the threshold (BL)
-                                 ; If AL <= BL, jump to .water_ok
-    jbe .water_ok               ; Jump to water_ok if sensor value <= threshold
+    ; Read user input for sensor value
+    mov eax, 3               ; syscall: read
+    mov ebx, 0               ; file descriptor: stdin
+    mov ecx, input_buffer    ; buffer to store input
+    mov edx, 4               ; buffer length
+    int 0x80
 
-    ; Step 3: If water level is too high, turn on the motor and trigger alarm
-    ; Turn on motor (set motor_control bit to 1)
-    mov byte [motor_control], 1  ; Set motor_control to 1 (motor on)
-    
-    ; Trigger alarm (set alarm_control bit to 1)
-    mov byte [alarm_control], 1  ; Set alarm_control to 1 (alarm triggered)
+    ; Convert input to integer
+    mov esi, input_buffer    ; pointer to input buffer
+    xor eax, eax             ; clear eax
+    xor ecx, ecx             ; clear ecx
+parse_input:
+    movzx ecx, byte [esi]    ; load byte
+    cmp ecx, 0xA             ; check for newline
+    je process_sensor
+    sub ecx, '0'             ; convert ASCII to integer
+    imul eax, eax, 10        ; shift left by 10 (decimal)
+    add eax, ecx             ; add digit
+    inc esi                  ; move to next character
+    jmp parse_input
 
-    ; Output motor and alarm status for testing
-    movzx rdi, byte [motor_control] ; Move motor control value to rdi for output
-    call print_int               ; Call print_int to display the motor control status
-    movzx rdi, byte [alarm_control] ; Move alarm control value to rdi for output
-    call print_int               ; Call print_int to display the alarm control status
+process_sensor:
+    mov [sensor_value], eax  ; Store the sensor value
 
-    jmp .exit                    ; Exit the program
+    ; Check sensor value and take action
+    mov ax, [sensor_value]   ; Load sensor value
+    cmp ax, 30               ; Compare to low threshold
+    jl activate_motor        ; If less than 30, activate motor
 
-.water_ok:
-    ; If the water level is ok, just output the status without turning on the motor or alarm
-    mov byte [motor_control], 0  ; Ensure motor is off (set motor_control to 0)
-    mov byte [alarm_control], 0  ; Ensure alarm is off (set alarm_control to 0)
+    cmp ax, 70               ; Compare to high threshold
+    jg activate_alarm        ; If greater than 70, activate alarm
 
-    ; Output motor and alarm status for testing
-    movzx rdi, byte [motor_control] ; Move motor control value to rdi for output
-    call print_int               ; Call print_int to display the motor control status
-    movzx rdi, byte [alarm_control] ; Move alarm control value to rdi for output
-    call print_int               ; Call print_int to display the alarm control status
+    ; Moderate level: stop motor
+    jmp stop_motor
 
-.exit:
-    ; Exit the program
-    mov rax, 60                  ; syscall: exit
-    xor rdi, rdi                 ; exit code 0
-    syscall
+activate_motor:
+    mov byte [motor_status], 1 ; Turn motor ON
+    mov byte [alarm_status], 0 ; Ensure alarm is OFF
+    jmp display_status
 
-; Print Integer Subroutine: Prints an integer in rdi
-print_int:
-    push rbx                     ; Save rbx
-    push rcx                     ; Save rcx
-    push rdx                     ; Save rdx
+activate_alarm:
+    mov byte [alarm_status], 1 ; Turn alarm ON
+    mov byte [motor_status], 0 ; Ensure motor is OFF
+    jmp display_status
 
-    mov rax, rdi                 ; Move the integer to rax for division
-    mov rbx, 10                  ; Base 10
-    xor rcx, rcx                 ; Clear rcx (digit count)
+stop_motor:
+    mov byte [motor_status], 0 ; Turn motor OFF
+    mov byte [alarm_status], 0 ; Ensure alarm is OFF
 
-.print_loop:
-    xor rdx, rdx                 ; Clear rdx
-    div rbx                      ; Divide rax by 10
-    add dl, '0'                  ; Convert remainder to ASCII
-    push rdx                     ; Save ASCII digit on the stack
-    inc rcx                      ; Increment digit count
-    test rax, rax                ; Check if quotient is zero
-    jnz .print_loop              ; If not, repeat
+display_status:
+    ; Display motor status
+    cmp byte [motor_status], 1
+    je print_motor_on
+    jmp print_motor_off
 
-.print_digits:
-    pop rax                      ; Pop digit from the stack
-    mov rsi, rsp                 ; Address of the digit
-    mov rdx, 1                   ; Length of the digit
-    mov rax, 1                   ; syscall: write
-    mov rdi, 1                   ; file descriptor: stdout
-    syscall
-    loop .print_digits           ; Repeat for all digits
+print_motor_on:
+    mov eax, 4               ; syscall: write
+    mov ebx, 1               ; file descriptor: stdout
+    mov ecx, motor_on_msg    ; pointer to message
+    mov edx, 9               ; message length
+    int 0x80
+    jmp print_alarm_status
 
-    pop rdx                      ; Restore rdx
-    pop rcx                      ; Restore rcx
-    pop rbx                      ; Restore rbx
-    ret                          ; Return to the caller (main program)
+print_motor_off:
+    mov eax, 4               ; syscall: write
+    mov ebx, 1               ; file descriptor: stdout
+    mov ecx, motor_off_msg   ; pointer to message
+    mov edx, 10              ; message length
+    int 0x80
+
+print_alarm_status:
+    ; Display alarm status
+    cmp byte [alarm_status], 1
+    je print_alarm_on
+    jmp print_alarm_off
+
+print_alarm_on:
+    mov eax, 4               ; syscall: write
+    mov ebx, 1               ; file descriptor: stdout
+    mov ecx, alarm_on_msg    ; pointer to message
+    mov edx, 9               ; message length
+    int 0x80
+    jmp exit_program
+
+print_alarm_off:
+    mov eax, 4               ; syscall: write
+    mov ebx, 1               ; file descriptor: stdout
+    mov ecx, alarm_off_msg   ; pointer to message
+    mov edx, 10              ; message length
+    int 0x80
+
+exit_program:
+    mov eax, 1               ; syscall: exit
+    xor ebx, ebx             ; return code 0
+    int 0x80

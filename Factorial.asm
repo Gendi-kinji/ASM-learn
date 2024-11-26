@@ -1,93 +1,99 @@
 section .data
-    prompt db "Enter a number: ", 0
+    prompt db "Enter a number: ", 0xA, 0
     result_msg db "Factorial is: ", 10, 0
 
 section .bss
-    number resd 1               ; Reserve space for 1 integer (input number)
+    number resb 15
+    result resd 0
+    output resb 20            ; Buffer for output string
 
 section .text
 global _start
 
 _start:
-    ; Step 1: Print prompt to ask for input
-    mov rax, 1                   ; syscall: write
-    mov rdi, 1                   ; file descriptor: stdout
-    mov rsi, prompt              ; address of the prompt string
-    mov rdx, 16                  ; length of the prompt string
-    syscall
+    ; Print the prompt message
+    mov eax, 4
+    mov ebx, 1
+    mov ecx, prompt
+    mov edx, 17
+    int 0x80
 
-    ; Read user input (integer)
-    mov rax, 0                   ; syscall: read
-    mov rdi, 0                   ; file descriptor: stdin
-    lea rsi, [number]            ; address of the number variable
-    mov rdx, 4                   ; read 4 bytes (size of an integer)
-    syscall
+    ; Input number
+    mov eax, 3
+    mov ebx, 0
+    mov ecx, number
+    mov edx, 15
+    int 0x80
 
-    ; Step 2: Compute the factorial of the input number
-    mov eax, [number]            ; Load the number into eax (argument for factorial)
-    call factorial               ; Call the factorial subroutine
+    ; Convert input to integer
+    mov esi, number
+    xor eax, eax
+    xor ecx, ecx
+parse_input:
+    movzx ecx, byte [esi]
+    cmp ecx, 0xA
+    je calculate_factorial
+    sub ecx, '0'
+    imul eax, eax, 10
+    add eax, ecx
+    inc esi
+    jmp parse_input
 
-    ; Step 3: Print the result message
-    mov rax, 1                   ; syscall: write
-    mov rdi, 1                   ; file descriptor: stdout
-    mov rsi, result_msg          ; result message
-    mov rdx, 15                  ; length of the result message
-    syscall
+calculate_factorial:
+    mov [result], eax           ; Store the input number in result
+    mov ebx, eax                ; Copy the input number to ebx
+    dec ebx                     ; Decrement ebx (n-1)
+    jz print_result             ; If input number is 1, skip calculation
 
-    ; Step 4: Print the result (factorial in eax)
-    mov rdi, eax                 ; Move the result to rdi for printing
-    call print_int               ; Call print_int function to print the integer
+factorial_loop:
+    imul eax, ebx               ; Multiply eax by ebx
+    dec ebx                     ; Decrement ebx
+    jnz factorial_loop          ; Repeat until ebx is 0
 
-    ; Exit program
-    mov rax, 60                  ; syscall: exit
-    xor rdi, rdi                 ; exit code 0
-    syscall
+    mov [result], eax           ; Store the result in memory
 
-; Factorial Subroutine: Computes factorial of a number in eax
-factorial:
-    cmp eax, 1                   ; Compare eax with 1
-    jbe .base_case               ; If eax <= 1, jump to base case
+print_result:
+    ; Print the result message
+    mov eax, 4
+    mov ebx, 1
+    mov ecx, result_msg
+    mov edx, 15
+    int 0x80
 
-    push rdi                      ; Save the value of rdi (n) on the stack
-    dec eax                       ; Decrease eax (n = n-1)
-    call factorial                ; Call factorial(n-1)
-    pop rdi                       ; Restore the value of rdi (n)
+    ; Convert the result to ASCII and print
+    mov eax, [result]
+    mov edi, output + 20        ; Point to the end of the buffer
+    call int_to_ascii
 
-    mul rdi                       ; Multiply eax by rdi (eax = eax * n)
-    ret                           ; Return to the caller (main program)
+    ; Calculate the length of the string
+    mov ecx, output + 20        ; End of the buffer
+    sub ecx, edi                ; Calculate length
+    mov edx, ecx                ; Move length to edx
 
-.base_case:
-    mov eax, 1                    ; Return 1 for base case (factorial(0) or factorial(1))
-    ret                           ; Return to the caller (main program)
+    ; Print the result
+    mov eax, 4
+    mov ebx, 1
+    mov ecx, edi 
+    mov edx, ecx               ; Length of the output buffer
+    int 0x80
 
-; Print Integer Subroutine: Prints an integer in rdi
-print_int:
-    push rbx                     ; Save rbx
-    push rcx                     ; Save rcx
-    push rdx                     ; Save rdx
+    ; Exit the program
+    mov eax, 1
+    xor ebx, ebx
+    int 0x80
 
-    mov rbx, 10                  ; Base 10
-    xor rcx, rcx                 ; Clear rcx (digit count)
-
-.print_loop:
-    xor rdx, rdx                 ; Clear rdx
-    div rbx                      ; Divide rax by 10
-    add dl, '0'                  ; Convert remainder to ASCII
-    push rdx                     ; Save ASCII digit on the stack
-    inc rcx                      ; Increment digit count
-    test rax, rax                ; Check if quotient is zero
-    jnz .print_loop              ; If not, repeat
-
-.print_digits:
-    pop rax                      ; Pop digit from the stack
-    mov rsi, rsp                 ; Address of the digit
-    mov rdx, 1                   ; Length of the digit
-    mov rax, 1                   ; syscall: write
-    mov rdi, 1                   ; file descriptor: stdout
-    syscall
-    loop .print_digits           ; Repeat for all digits
-
-    pop rdx                      ; Restore rdx
-    pop rcx                      ; Restore rcx
-    pop rbx                      ; Restore rbx
-    ret                          ; Return to the caller (main program)
+; Subroutine: Convert integer in eax to ASCII string
+int_to_ascii:
+    xor ecx, ecx              ; Clear ecx (digit counter)
+    mov ebx, 10               ; Base 10
+convert_loop:
+    xor edx, edx              ; Clear remainder
+    div ebx                   ; Divide eax by 10
+    add dl, '0'               ; Convert remainder to ASCII
+    dec edi                   ; Move buffer pointer backward
+    mov [edi], dl             ; Store ASCII character
+    inc ecx                   ; Increment digit count
+    test eax, eax             ; Check if quotient is 0
+    jnz convert_loop          ; Repeat if not zero
+    sub edi, ecx              ; Adjust pointer to start of string
+    ret
